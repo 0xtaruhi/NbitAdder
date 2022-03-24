@@ -10,23 +10,26 @@ class CarryLookaheadAdder(bitwidth: Int) extends Module {
     val sum = Output(UInt(bitwidth.W))
     val cout = Output(UInt(1.W))
   })
-  
-  val aVec = VecInit(io.a.asBools)
-  val bVec = VecInit(io.b.asBools)
 
   // g{i} = a{i} & b{i}, p{i} = a{i} | b{i}
-  val gVec = (aVec zip bVec).map(x => x._1 & x._2)
-  val pVec = (aVec zip bVec).map(x => x._1 ^ x._2)
+  val g = io.a & io.b
+  val p = io.a ^ io.b
 
-  //Generate the carry chain
-  val cVec = VecInit(Seq.fill(bitwidth + 1)(0.U(1.W)))
-  cVec(0) := io.cin
-  // c{i+1} = g{i} | (c{i} & p{i}) 
-  val cVecTail = (pVec zip cVec.init).map(x => x._1 & x._2)
-                  .zip(gVec).map(x => x._1 | x._2)
-  for (i <- 1 until bitwidth + 1) { cVec(i) := cVecTail(i - 1) }
+  // Generate the carry chain
+  private def getC(_depth: Int): UInt = {
+    _depth match {
+      case 0 => io.cin
+      case _ => g(_depth - 1) | p(_depth - 1) & getC(_depth - 1)
+    }
+  }
+  private val cSeq = (0 to bitwidth).map(getC(_).asBool)
   
   // Output
-  io.sum := VecInit(pVec.zip(cVec.init).map(x => x._1 ^ x._2)).asUInt
-  io.cout := cVec(bitwidth)
+  private val sumVec = VecInit(Seq.fill(bitwidth)(false.B))
+  for (i <- 0 until bitwidth) {
+    sumVec(i) := p(i) ^ cSeq(i)
+  }
+  
+  io.sum := sumVec.asUInt
+  io.cout := cSeq(bitwidth)
 }
